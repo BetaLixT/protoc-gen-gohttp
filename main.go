@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"unicode"
 
 	"google.golang.org/protobuf/compiler/protogen"
 )
@@ -47,12 +48,48 @@ func GenerateFile(
 	g.P()
 	g.P("package ", file.GoPackageName)
 
+	// imports
+	g.P("import (")
+	g.P("\t\"context\"")
+	g.P("\t\"github.com/gin-gonic/gin\"")
+	g.P(")")
+
 	for _, srv := range file.Services {
 		// if err := genService(g, srv); err != nil {
 		// 	return err
 		// }
+		intname := srv.GoName + "HTTPServer"
 		g.P(fmt.Sprintf("// %s", srv.GoName))
+		g.P("type ", intname, " interface {")
+		for _, rpc := range srv.Methods {
+			g.Write([]byte(rpc.Comments.Leading.String()))
+			g.P("\t", rpc.GoName, "(context.Context, *", rpc.Input.GoIdent.GoName, ") (*", rpc.Output.GoIdent.GoName, ", error)")
+			g.Write([]byte(rpc.Comments.Trailing.String()))
+		}
+		g.P("}")
+
+		// controllers
+		ctrlName := toLower(srv.GoName)
+		g.P("type ", ctrlName, " struct {")
+		g.P("app ", intname)
+		g.P("}")
+		for _, rpc := range srv.Methods {
+			g.P("func (p *", ctrlName, ")", toLower(rpc.GoName), "(ctx *gin.Context) {")
+			g.P("p.app.", rpc.GoName, "(")
+			g.P("ctx,")
+			g.P("&", rpc.Input.GoIdent.GoName, " {")
+			g.P("},")
+			g.P(")")
+			g.P("}")
+		}
 	}
 
 	return nil
+}
+
+func toLower(in string) (out string) {
+	inr := []rune(in)
+	inr[0] = unicode.ToLower(inr[0])
+	out = string(inr)
+	return
 }
