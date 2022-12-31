@@ -75,10 +75,12 @@ func GenerateFile(
 		g.P("}")
 		for _, rpc := range srv.Methods {
 			g.P("func (p *", ctrlName, ")", toLower(rpc.GoName), "(ctx *gin.Context) {")
+
+			g.P("body := ", rpc.Input.GoIdent.GoName, "{}")
+			g.P("ctx.BindJSON(&body)")
 			g.P("p.app.", rpc.GoName, "(")
 			g.P("ctx,")
-			g.P("&", rpc.Input.GoIdent.GoName, " {")
-			g.P("},")
+			g.P("&body,")
 			g.P(")")
 			g.P("}")
 		}
