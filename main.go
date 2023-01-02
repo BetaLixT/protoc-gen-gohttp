@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"unicode"
 
+	"google.golang.org/genproto/googleapis/api/annotations"
 	"google.golang.org/protobuf/compiler/protogen"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/descriptorpb"
 )
 
 func main() {
@@ -69,11 +72,50 @@ func GenerateFile(
 		g.P("}")
 
 		// controllers
+		// TODO: handling get requests and path parameters
 		ctrlName := toLower(srv.GoName)
 		g.P("type ", ctrlName, " struct {")
 		g.P("app ", intname)
 		g.P("}")
+
+		reqs := []request{}
 		for _, rpc := range srv.Methods {
+			options, ok := rpc.Desc.Options().(*descriptorpb.MethodOptions)
+			if !ok {
+				return nil
+			}
+
+			httpRule, ok := proto.GetExtension(options, annotations.E_Http).(*annotations.HttpRule)
+			if !ok {
+				return nil
+			}
+
+			req := request{
+				Method:  "",
+				Path:    "",
+				Handler: toLower(rpc.GoName),
+			}
+
+			switch httpRule.GetPattern().(type) {
+			case *annotations.HttpRule_Get:
+				req.Method = "GET"
+				req.Path = httpRule.GetGet()
+			case *annotations.HttpRule_Put:
+				req.Method = "PUT"
+				req.Path = httpRule.GetPut()
+			case *annotations.HttpRule_Post:
+				req.Method = "POST"
+				req.Path = httpRule.GetPost()
+			case *annotations.HttpRule_Delete:
+				req.Method = "DELETE"
+				req.Path = httpRule.GetDelete()
+			case *annotations.HttpRule_Patch:
+				req.Method = "PATCH"
+				req.Path = httpRule.GetPatch()
+			default:
+				continue
+			}
+			reqs = append(reqs, req)
 			g.P("func (p *", ctrlName, ")", toLower(rpc.GoName), "(ctx *gin.Context) {")
 
 			g.P("body := ", rpc.Input.GoIdent.GoName, "{}")
@@ -84,9 +126,29 @@ func GenerateFile(
 			g.P(")")
 			g.P("}")
 		}
+
+		g.P("func Register", srv.GoName, "HTTPServer (")
+		g.P("grp *gin.RouterGroup,")
+		g.P("srv ", intname, ",")
+		g.P(") {")
+		g.P("ctrl := ", ctrlName, "{app: srv}")
+		for _, r := range reqs {
+			g.P("grp.", r.Method, "(\"", r.Path, "\", ", "ctrl.", r.Handler, ")")
+		}
+		g.P("}")
 	}
 
 	return nil
+}
+
+// func (ctrl *GroupsController) RegisterRoutes(grp *gin.RouterGroup) {
+// 	grp.POST("/groups/callback", ctrl.handleGroupChange)
+// }
+
+type request struct {
+	Method  string
+	Path    string
+	Handler string
 }
 
 func toLower(in string) (out string) {
